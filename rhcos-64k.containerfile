@@ -10,11 +10,11 @@ RUN \
 
 RUN dnf remove -y kernel kernel-core kernel-modules kernel-modules-core kernel-modules-extra && \
   dnf install --disablerepo="*" --enablerepo="*el10nv" -y \
-  kernel- \
-  kernel-core \
-  kernel-modules \
-  kernel-modules-core \
-  kernel-modules-extra \
+  kernel-64k \
+  kernel-64k-core \
+  kernel-64k-modules \
+  kernel-64k-modules-core \
+  kernel-64k-modules-extra \
   && \
   dnf clean all
 
