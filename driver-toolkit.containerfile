@@ -14,8 +14,8 @@ RUN \
   kernel-64k-modules \
   kernel-64k-modules-core \
   kernel-64k-modules-extra \
-  # kernel-devel \
-  # kernel-devel-matched \
+  kernel-64k-devel \
+  kernel-64k-devel-matched \
   kernel-headers \
   kernel-rpm-macros \
   kernel-srpm-macros.noarch
