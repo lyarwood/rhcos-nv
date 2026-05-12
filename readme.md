@@ -107,7 +107,7 @@ export ROBOT_AUTH=$(echo -n '<robot-account>:<token>' | base64 -w0)
 cat > /tmp/robot-auth.json <<EOF
 {
   "auths": {
-    "quay.io": {
+    "quay.io/<your-namespace>/rhcos-64k-cs": {
       "auth": "${ROBOT_AUTH}"
     }
   }
