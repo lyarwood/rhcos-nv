@@ -70,6 +70,101 @@ podman build -f rhcos-64k.containerfile \
   --tag "rhcos-64k-cs:${RHCOS_VERSION}-latest"
 ```
 
+### Push Image to Registry
+
+Push the built image to a registry accessible by the cluster:
+```sh
+podman push rhcos-64k-cs:${RHCOS_VERSION}-latest \
+  quay.io/<your-namespace>/rhcos-64k-cs:${RHCOS_VERSION}-latest
+```
+
+### Deploy as RHCOS Layer on an Existing OCP Cluster
+
+Custom layered images are deployed via a `MachineConfig` that sets the `osImageURL`
+field. The MCO will drain, reboot, and re-image each node in the target pool.
+
+**Prerequisites:**
+- The custom image must be based on the same RHCOS version running on the cluster.
+- Use an image digest (`@sha256:...`) rather than a tag to ensure all nodes deploy
+  the same image.
+- Once a custom `osImageURL` is set, the cluster will no longer auto-update the OS
+  for that pool. You are responsible for rebuilding the image after cluster upgrades.
+
+**1. Get the image digest:**
+```sh
+export IMAGE_DIGEST=$(podman inspect --format='{{.Digest}}' \
+  rhcos-64k-cs:${RHCOS_VERSION}-latest)
+export IMAGE_REF="quay.io/<your-namespace>/rhcos-64k-cs@${IMAGE_DIGEST}"
+```
+
+**2. Create the MachineConfig:**
+```yaml
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: os-layer-rhcos-nv
+spec:
+  osImageURL: quay.io/<your-namespace>/rhcos-64k-cs@sha256:<digest>
+```
+
+Apply it:
+```sh
+oc apply -f machineconfig.yaml
+```
+
+**3. Monitor the rollout:**
+```sh
+# Watch the MachineConfigPool progress
+oc get mcp worker -w
+
+# Check individual node status
+oc get nodes -o wide
+```
+
+The MCO will cordon, drain, and reboot each node one at a time. The rollout is
+complete when `UPDATED=True` and `DEGRADED=False` on the MachineConfigPool.
+
+**Single Node OpenShift (SNO):**
+
+On SNO the control plane and worker roles share the same node. Apply the
+MachineConfig with the `master` role label instead of `worker`:
+```yaml
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: master
+  name: os-layer-rhcos-nv
+spec:
+  osImageURL: quay.io/<your-namespace>/rhcos-64k-cs@sha256:<digest>
+```
+
+The MCO will reboot the single node to apply the new image. This causes a full
+cluster outage during the reboot. The cluster will recover automatically once
+the node comes back up. Monitor with:
+```sh
+# Before applying, ensure the cluster is healthy
+oc get clusterversion
+oc get co
+
+# After applying, wait for the node to reboot and rejoin
+oc get mcp master -w
+```
+
+**4. Verify the new OS image on a node:**
+```sh
+oc debug node/<node-name> -- chroot /host rpm -q kernel-64k-core
+```
+
+**5. Revert to the default RHCOS image:**
+
+Delete the MachineConfig to return nodes to the stock OS:
+```sh
+oc delete mc os-layer-rhcos-nv
+```
+
 ### Build Driver Toolkit Container Image Layer
 
 ```sh
