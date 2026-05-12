@@ -89,6 +89,48 @@ field. The MCO will drain, reboot, and re-image each node in the target pool.
   the same image.
 - Once a custom `osImageURL` is set, the cluster will no longer auto-update the OS
   for that pool. You are responsible for rebuilding the image after cluster upgrades.
+- The cluster must be able to pull the image. If the image is in a private registry,
+  add the credentials to the cluster's global pull secret (see below).
+
+**Adding registry credentials to the cluster pull secret:**
+
+If the image is hosted in a private quay.io repository (e.g. using a robot account),
+the credentials must be merged into the cluster's global pull secret:
+```sh
+# Extract the current cluster pull secret
+oc get secret pull-secret -n openshift-config \
+  -o jsonpath='{.data.\.dockerconfigjson}' | base64 -d > /tmp/cluster-pull.json
+
+# Create an auth file with the robot account credentials
+# (replace <robot-account> and <token> with the values from quay.io)
+export ROBOT_AUTH=$(echo -n '<robot-account>:<token>' | base64 -w0)
+cat > /tmp/robot-auth.json <<EOF
+{
+  "auths": {
+    "quay.io": {
+      "auth": "${ROBOT_AUTH}"
+    }
+  }
+}
+EOF
+
+# Merge the robot account credentials into the cluster pull secret
+jq -s '.[0].auths * .[1].auths | {auths: .}' \
+  /tmp/cluster-pull.json /tmp/robot-auth.json > /tmp/merged-pull.json
+
+# Apply the updated pull secret to the cluster
+oc set data secret/pull-secret -n openshift-config \
+  --from-file=.dockerconfigjson=/tmp/merged-pull.json
+
+# Clean up sensitive files
+rm -f /tmp/cluster-pull.json /tmp/robot-auth.json /tmp/merged-pull.json
+```
+
+Updating the pull secret triggers a rollout across all nodes. Wait for all
+MachineConfigPools to finish updating before applying the OS layer MachineConfig:
+```sh
+oc get mcp -w
+```
 
 **1. Get the image digest:**
 ```sh
